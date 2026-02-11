@@ -2,7 +2,8 @@
 
 Real-time social sentiment tracker for trading signals.
 
-**Phase 1:** Reddit + X trends → Momentum scores → Dashboard
+**Phase 1:** Reddit + X trends → Momentum scores → Dashboard  
+**Phase 2:** Discord + Email alerts ✅
 
 ## 🚀 Quick Deploy to Vercel
 
@@ -14,7 +15,17 @@ Real-time social sentiment tracker for trading signals.
 4. Fill in name: `TrendPulse`, redirect: `http://localhost:8080`
 5. Note your `client_id` (under app name) and `secret`
 
-### 2. Deploy to Vercel
+### 2. Set Up Alerts (Optional)
+
+**Discord Webhook:**
+1. Open Discord server → Settings → Integrations → Webhooks
+2. Click **New Webhook** → Copy URL
+
+**Resend Email:**
+1. Sign up at [resend.com](https://resend.com) (free: 3k/month)
+2. Create API key at [resend.com/api-keys](https://resend.com/api-keys)
+
+### 3. Deploy to Vercel
 
 ```bash
 # Clone/download this repo
@@ -26,25 +37,24 @@ npm i -g vercel
 # Deploy
 vercel
 
-# Follow prompts, then add environment variables:
+# Add environment variables:
 vercel env add REDDIT_CLIENT_ID
 vercel env add REDDIT_CLIENT_SECRET
 vercel env add REDDIT_USERNAME
 vercel env add REDDIT_PASSWORD
 
+# Optional: Alerts
+vercel env add DISCORD_WEBHOOK_URL
+vercel env add RESEND_API_KEY
+vercel env add ALERT_EMAIL
+
 # Redeploy with env vars
 vercel --prod
 ```
 
-**Or via Vercel Dashboard:**
-1. Push to GitHub
-2. Import at [vercel.com/new](https://vercel.com/new)
-3. Add env vars in Project Settings > Environment Variables
-4. Deploy
+### 4. Done!
 
-### 3. Done!
-
-Visit your `.vercel.app` URL. Dashboard auto-refreshes every 60s.
+Visit your `.vercel.app` URL. Toggle alerts with 🔔 button.
 
 ---
 
@@ -53,35 +63,47 @@ Visit your `.vercel.app` URL. Dashboard auto-refreshes every 60s.
 ```
 trendpulse-mvp/
 ├── src/
-│   ├── App.jsx          # Dashboard (single component)
+│   ├── App.jsx          # Dashboard + alerts UI
 │   └── main.jsx         # Entry point
 ├── api/
-│   └── trends.py        # Serverless: Reddit + X scraping
+│   ├── trends.py        # Reddit + X scraping
+│   └── alert.py         # Discord/email alerts
 ├── scripts/
-│   └── scrape_x.py      # Local Selenium X scraper (optional)
-├── vercel.json          # Vercel config
+│   └── scrape_x.py      # Local Selenium X scraper
+├── vercel.json
 ├── package.json
-├── requirements.txt     # Python deps for API
+├── requirements.txt
 └── .env.example
 ```
 
-## 🔧 Local Development
+## 🔔 Alert System
 
-```bash
-# Frontend
-npm install
-npm run dev
+### Triggers
+| Signal | Condition | Auto-Alert |
+|--------|-----------|------------|
+| BUY | Momentum ≥70, Sentiment >0.2 | ✅ When enabled |
+| SELL | Momentum ≤30 OR Sentiment <-0.3 | ✅ When enabled |
+| WATCH | Momentum ≥50 | Manual only |
 
-# API (separate terminal) - need to run Python locally
-pip install praw requests beautifulsoup4
-python -m http.server 3001  # Or use vercel dev
-```
+### Channels
+- **Discord:** Rich embed with color-coded signals
+- **Email:** Clean HTML email via Resend
+
+### Manual Alerts
+Click 🔔 **Send Alert** on any BUY/SELL card.
+
+### Auto Alerts
+Toggle 🔔 **Alerts ON** in header. Triggers on:
+- BUY signals with momentum ≥75
+- Checked every refresh (60s)
+
+---
 
 ## 📊 How It Works
 
 ### Data Sources
 - **Reddit:** PRAW API → r/wallstreetbets, r/cryptocurrency (hot + rising)
-- **X/Twitter:** Scrapes trends24.in (no auth needed, mirrors Twitter trends)
+- **X/Twitter:** Scrapes trends24.in (mirrors Twitter trends)
 
 ### Momentum Score (0-100)
 ```
@@ -96,23 +118,32 @@ momentum = mention_volume(40%) + post_scores(30%) + sentiment(30%)
 | ≥50      | >0        | WATCH  |
 | other    | other     | HOLD   |
 
-## 🛠️ Optional: Local X Selenium Scraper
+---
 
-For real x.com scraping (runs locally only):
+## 🛠️ API Reference
 
-```bash
-pip install selenium webdriver-manager
-python scripts/scrape_x.py > x_trends.json
+### GET /api/trends
+Returns trending tickers with momentum scores.
+
+### POST /api/alert
+Send alert for a ticker.
+```json
+{
+  "ticker": "$NVDA",
+  "signal": "BUY",
+  "momentum": 85,
+  "sentiment": 0.45,
+  "source": "reddit",
+  "channels": ["discord", "email"]
+}
 ```
-
-Note: Vercel can't run Selenium, so deployed version uses trends24.in fallback.
 
 ---
 
 ## 📋 Roadmap
 
 - [x] **Phase 1:** Reddit + X trends, momentum scores, dashboard
-- [ ] **Phase 2:** Discord webhook alerts, email notifications
+- [x] **Phase 2:** Discord webhook alerts, email notifications
 - [ ] **Phase 3:** Alpaca/Coinbase quick trade execution
 
 ---

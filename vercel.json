@@ -7,6 +7,10 @@
     "api/trends.py": {
       "runtime": "python3.11",
       "maxDuration": 30
+    },
+    "api/alert.py": {
+      "runtime": "python3.11",
+      "maxDuration": 10
     }
   },
   "rewrites": [

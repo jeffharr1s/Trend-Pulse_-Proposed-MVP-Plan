@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 
 const API_URL = '/api/trends';
+const ALERT_URL = '/api/alert';
 
 export default function App() {
   const [trends, setTrends] = useState([]);
@@ -8,32 +9,8 @@ export default function App() {
   const [error, setError] = useState(null);
   const [filter, setFilter] = useState('all'); // all, reddit, twitter
   const [lastUpdate, setLastUpdate] = useState(null);
-
-  const fetchTrends = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await fetch(API_URL);
-      if (!res.ok) throw new Error(`API error: ${res.status}`);
-      const data = await res.json();
-      setTrends(data.trends || []);
-      setLastUpdate(new Date().toLocaleTimeString());
-      setError(null);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchTrends();
-    const interval = setInterval(fetchTrends, 60000); // Refresh every 60s
-    return () => clearInterval(interval);
-  }, [fetchTrends]);
-
-  const filteredTrends = trends.filter(t => 
-    filter === 'all' || t.source === filter
-  );
+  const [alertsEnabled, setAlertsEnabled] = useState(false);
+  const [alertStatus, setAlertStatus] = useState(null); // {ticker, success, message}
 
   const getSignal = (momentum, sentiment) => {
     if (momentum >= 70 && sentiment > 0.2) return { label: 'BUY', color: '#22c55e', bg: '#dcfce7' };
@@ -48,6 +25,70 @@ export default function App() {
     if (m >= 30) return '#6b7280';
     return '#ef4444';
   };
+
+  const fetchTrends = useCallback(async () => {
+    try {
+      setLoading(true);
+      const res = await fetch(API_URL);
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      const data = await res.json();
+      const newTrends = data.trends || [];
+      setTrends(newTrends);
+      setLastUpdate(new Date().toLocaleTimeString());
+      setError(null);
+      
+      // Auto-alert on BUY signals when enabled
+      if (alertsEnabled) {
+        newTrends.forEach(t => {
+          const signal = getSignal(t.momentum, t.sentiment);
+          if (signal.label === 'BUY' && t.momentum >= 75) {
+            sendAlert(t, signal.label);
+          }
+        });
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [alertsEnabled]);
+  
+  const sendAlert = async (trend, signal) => {
+    try {
+      const res = await fetch(ALERT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticker: trend.ticker,
+          signal: signal,
+          momentum: trend.momentum,
+          sentiment: trend.sentiment,
+          source: trend.source,
+          channels: ['discord', 'email']
+        })
+      });
+      const data = await res.json();
+      if (data.sent) {
+        setAlertStatus({ ticker: trend.ticker, success: true, message: `Alert sent for ${trend.ticker}` });
+      } else {
+        setAlertStatus({ ticker: trend.ticker, success: false, message: data.reason || 'Not sent' });
+      }
+      setTimeout(() => setAlertStatus(null), 3000);
+    } catch (err) {
+      setAlertStatus({ ticker: trend.ticker, success: false, message: err.message });
+      setTimeout(() => setAlertStatus(null), 3000);
+    }
+  };
+
+  useEffect(() => {
+    fetchTrends();
+    const interval = setInterval(fetchTrends, 60000); // Refresh every 60s
+    return () => clearInterval(interval);
+  }, [fetchTrends]);
+
+  const filteredTrends = trends.filter(t => 
+    filter === 'all' || t.source === filter
+  );
 
   return (
     <div style={{ minHeight: '100vh', background: '#0f172a', color: '#f1f5f9', fontFamily: 'system-ui, sans-serif' }}>
@@ -64,6 +105,20 @@ export default function App() {
             <span style={{ fontSize: '12px', color: '#64748b' }}>Updated: {lastUpdate}</span>
           )}
           <button 
+            onClick={() => setAlertsEnabled(!alertsEnabled)}
+            style={{ 
+              padding: '8px 16px', 
+              background: alertsEnabled ? '#22c55e' : '#334155', 
+              border: 'none', 
+              borderRadius: '6px', 
+              color: 'white', 
+              cursor: 'pointer', 
+              fontSize: '14px' 
+            }}
+          >
+            {alertsEnabled ? '🔔 Alerts ON' : '🔕 Alerts OFF'}
+          </button>
+          <button 
             onClick={fetchTrends} 
             disabled={loading}
             style={{ padding: '8px 16px', background: '#3b82f6', border: 'none', borderRadius: '6px', color: 'white', cursor: 'pointer', fontSize: '14px' }}
@@ -72,6 +127,23 @@ export default function App() {
           </button>
         </div>
       </header>
+
+      {/* Alert Status Toast */}
+      {alertStatus && (
+        <div style={{ 
+          position: 'fixed', 
+          top: '80px', 
+          right: '24px', 
+          padding: '12px 20px', 
+          background: alertStatus.success ? '#166534' : '#991b1b', 
+          borderRadius: '8px', 
+          fontSize: '14px',
+          zIndex: 50,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+        }}>
+          {alertStatus.success ? '✅' : '⚠️'} {alertStatus.message}
+        </div>
+      )}
 
       {/* Filters */}
       <div style={{ padding: '16px 24px', display: 'flex', gap: '8px' }}>
@@ -190,6 +262,26 @@ export default function App() {
                   <div style={{ marginTop: '8px', fontSize: '11px', color: '#64748b' }}>
                     r/{t.subreddit} • {t.posts} posts
                   </div>
+                )}
+
+                {/* Alert button */}
+                {(signal.label === 'BUY' || signal.label === 'SELL') && (
+                  <button
+                    onClick={() => sendAlert(t, signal.label)}
+                    style={{
+                      marginTop: '12px',
+                      width: '100%',
+                      padding: '8px',
+                      background: '#334155',
+                      border: '1px solid #475569',
+                      borderRadius: '6px',
+                      color: '#94a3b8',
+                      cursor: 'pointer',
+                      fontSize: '12px'
+                    }}
+                  >
+                    🔔 Send Alert
+                  </button>
                 )}
               </div>
             );
